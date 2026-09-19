@@ -9,6 +9,7 @@ pub mod delete;
 pub mod init;
 pub mod insert;
 pub mod list;
+pub mod remove;
 pub mod status;
 
 #[derive(Debug, thiserror::Error)]

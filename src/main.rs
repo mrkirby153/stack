@@ -29,7 +29,7 @@ enum Command {
     /// Inserts a new layer into the stack at a specified position
     Insert(commands::insert::Args),
     /// Removes a layer from the stack
-    Remove,
+    Remove(commands::remove::Args),
     /// Initializes a new stack using the current branch as the base
     Init(commands::init::Args),
     /// Deletes an existing stack
@@ -59,6 +59,7 @@ async fn run() -> Result<(), CliError> {
         Command::List => commands::list::run(&ctx).await,
         Command::Status => commands::status::run(&ctx).await,
         Command::Insert(args) => commands::insert::run(&ctx, args).await,
+        Command::Remove(args) => commands::remove::run(&ctx, args).await,
         _ => Err(CliError::UnsupportedSubcommand),
     }
 }

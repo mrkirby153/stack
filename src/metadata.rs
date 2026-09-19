@@ -150,6 +150,14 @@ impl StackMetadata {
         Ok(())
     }
 
+    pub fn remove_layer(&mut self, branch: &str) -> Option<LayerMetadata> {
+        if let Some(pos) = self.get_position(branch) {
+            Some(self.layers.remove(pos))
+        } else {
+            None
+        }
+    }
+
     pub fn get_position(&self, branch: &str) -> Option<usize> {
         self.layers.iter().position(|layer| layer.branch == branch)
     }
