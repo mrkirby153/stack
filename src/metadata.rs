@@ -1,4 +1,7 @@
-use std::{fs::File, path::PathBuf};
+use std::{
+    fs::File,
+    path::{Path, PathBuf},
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -38,10 +41,10 @@ impl TryFrom<PathBuf> for StackMetadata {
 
 impl StackMetadata {
     /// Creates a new stack metadata with the specified target
-    pub fn new(target: String) -> Self {
+    pub fn new(target: &str) -> Self {
         Self {
-            version: 1,
-            target,
+            version: STACK_METADATA_VERSION,
+            target: target.to_string(),
             layers: Vec::new(),
         }
     }
@@ -52,4 +55,11 @@ impl StackMetadata {
         serde_json::to_writer(file, self)?;
         Ok(())
     }
+}
+
+pub fn get_stack_metadata_path(repo: &Path, filename: &str) -> Result<PathBuf, std::io::Error> {
+    let directory = repo.join(STACK_METADATA_PATH);
+    // Ensure the stack metadata directory exists
+    std::fs::create_dir_all(&directory)?;
+    Ok(directory.join(filename))
 }

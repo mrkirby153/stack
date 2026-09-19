@@ -1,1 +1,2 @@
-mod metadata;
+pub mod git;
+pub mod metadata;
