@@ -29,10 +29,10 @@ pub struct LayerMetadata {
     pub base_oid: String,
 }
 
-impl TryFrom<PathBuf> for StackMetadata {
+impl TryFrom<&Path> for StackMetadata {
     type Error = std::io::Error;
 
-    fn try_from(path: PathBuf) -> Result<Self, Self::Error> {
+    fn try_from(path: &Path) -> Result<Self, Self::Error> {
         let file = File::open(path)?;
         let metadata = serde_json::from_reader(file)?;
         Ok(metadata)
@@ -76,6 +76,14 @@ impl StackMetadata {
 
         Ok(())
     }
+
+    pub fn get_position(&self, branch: &str) -> Option<usize> {
+        self.layers.iter().position(|layer| layer.branch == branch)
+    }
+
+    pub fn size(&self) -> usize {
+        self.layers.len()
+    }
 }
 
 pub fn get_stack_metadata_path(repo: &Path, filename: &str) -> Result<PathBuf, std::io::Error> {
@@ -83,4 +91,32 @@ pub fn get_stack_metadata_path(repo: &Path, filename: &str) -> Result<PathBuf, s
     // Ensure the stack metadata directory exists
     std::fs::create_dir_all(&directory)?;
     Ok(directory.join(filename))
+}
+
+pub fn get_stack_for_branch(repo: &Path, branch_name: &str) -> Option<PathBuf> {
+    let stack_metadata_folder = repo.join(STACK_METADATA_PATH).join("stacks");
+
+    if !stack_metadata_folder.exists() {
+        return None;
+    }
+
+    let read_dir = stack_metadata_folder.read_dir();
+    match read_dir {
+        Ok(read_dir) => {
+            for entry in read_dir.flatten() {
+                let path = entry.path();
+                if path.is_file()
+                    && let Ok(metadata) = StackMetadata::try_from(path.as_path())
+                    && metadata
+                        .layers
+                        .iter()
+                        .any(|layer| layer.branch == branch_name)
+                {
+                    return Some(path);
+                }
+            }
+        }
+        Err(_) => return None,
+    }
+    None
 }

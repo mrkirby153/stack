@@ -25,7 +25,9 @@ pub struct Args {
 
 pub async fn run(ctx: &Ctx, args: Args) -> Result<(), CliError> {
     let target = args.target.unwrap_or(DEFAULT_BRANCH_TARGET.to_string());
-    let current_branch = get_current_branch(&ctx.cwd).await?;
+    let current_branch = get_current_branch(&ctx.cwd)
+        .await?
+        .ok_or(CliError::NotOnBranch)?;
 
     if current_branch == target {
         return Err(CliError::TargetBranchMatchesCurrent);

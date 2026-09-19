@@ -57,6 +57,7 @@ async fn run() -> Result<(), CliError> {
         Command::Init(args) => commands::init::run(&ctx, args).await,
         Command::Delete(args) => commands::delete::run(&ctx, args).await,
         Command::List => commands::list::run(&ctx).await,
+        Command::Status => commands::status::run(&ctx).await,
         _ => Err(CliError::UnsupportedSubcommand),
     }
 }

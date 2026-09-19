@@ -24,14 +24,14 @@ pub async fn get_repo_git_folder(dir: &PathBuf) -> Result<PathBuf, GitRepoError>
     Ok(path.join(git_dir))
 }
 
-pub async fn get_current_branch(dir: &PathBuf) -> Result<String, GitRepoError> {
+pub async fn get_current_branch(dir: &PathBuf) -> Result<Option<String>, GitRepoError> {
     let branch_name = git(dir, vec!["branch", "--show-current"]).await?;
 
     if branch_name.is_empty() {
-        return Err(GitRepoError::NotOnBranch);
+        return Ok(None);
     }
 
-    Ok(branch_name)
+    Ok(Some(branch_name))
 }
 
 pub async fn current_ref(dir: &PathBuf) -> Result<String, GitRepoError> {

@@ -8,9 +8,14 @@ use crate::{
 pub mod delete;
 pub mod init;
 pub mod list;
+pub mod status;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CliError {
+    #[error("Not on any branch")]
+    NotOnBranch,
+    #[error("No stack found for the current branch")]
+    NoStack,
     #[error("Unsupported subcommand")]
     UnsupportedSubcommand,
     #[error("Target branch matches the current branch")]
