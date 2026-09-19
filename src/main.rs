@@ -27,7 +27,7 @@ enum Command {
     /// Advances the stack by one layer
     Advance,
     /// Inserts a new layer into the stack at a specified position
-    Insert,
+    Insert(commands::insert::Args),
     /// Removes a layer from the stack
     Remove,
     /// Initializes a new stack using the current branch as the base
@@ -58,6 +58,7 @@ async fn run() -> Result<(), CliError> {
         Command::Delete(args) => commands::delete::run(&ctx, args).await,
         Command::List => commands::list::run(&ctx).await,
         Command::Status => commands::status::run(&ctx).await,
+        Command::Insert(args) => commands::insert::run(&ctx, args).await,
         _ => Err(CliError::UnsupportedSubcommand),
     }
 }

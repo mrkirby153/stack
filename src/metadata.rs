@@ -1,5 +1,6 @@
 use std::{
     fs::File,
+    ops::{Deref, DerefMut},
     path::{Path, PathBuf},
 };
 
@@ -7,6 +8,25 @@ use serde::{Deserialize, Serialize};
 
 const STACK_METADATA_VERSION: i32 = 1;
 const STACK_METADATA_PATH: &str = "stack";
+
+pub struct Stack {
+    file: PathBuf,
+    metadata: StackMetadata,
+}
+
+impl Deref for Stack {
+    type Target = StackMetadata;
+
+    fn deref(&self) -> &Self::Target {
+        &self.metadata
+    }
+}
+
+impl DerefMut for Stack {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.metadata
+    }
+}
 
 /// Represents the metadata associated with a stack
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,13 +49,37 @@ pub struct LayerMetadata {
     pub base_oid: String,
 }
 
-impl TryFrom<&Path> for StackMetadata {
+impl TryFrom<&Path> for Stack {
     type Error = std::io::Error;
 
     fn try_from(path: &Path) -> Result<Self, Self::Error> {
         let file = File::open(path)?;
         let metadata = serde_json::from_reader(file)?;
-        Ok(metadata)
+        Ok(Stack {
+            file: path.to_path_buf(),
+            metadata,
+        })
+    }
+}
+
+impl Stack {
+    pub fn new(file: &Path, target: &str) -> Self {
+        Self {
+            file: file.to_path_buf(),
+            metadata: StackMetadata::new(target),
+        }
+    }
+
+    pub fn save(&self) -> Result<(), std::io::Error> {
+        self.metadata.write(&self.file)
+    }
+
+    pub fn name(&self) -> &str {
+        self.file
+            .file_name()
+            .and_then(|f| f.to_str())
+            .and_then(|s| s.strip_suffix(".json"))
+            .unwrap_or("<<unknown>>")
     }
 }
 
@@ -47,7 +91,7 @@ pub enum AddLayerError {
 
 impl StackMetadata {
     /// Creates a new stack metadata with the specified target
-    pub fn new(target: &str) -> Self {
+    fn new(target: &str) -> Self {
         Self {
             version: STACK_METADATA_VERSION,
             target: target.to_string(),
@@ -56,7 +100,7 @@ impl StackMetadata {
     }
 
     /// Writes the stack metadata to the specified file path
-    pub fn write(&self, path: PathBuf) -> Result<(), std::io::Error> {
+    pub fn write(&self, path: &Path) -> Result<(), std::io::Error> {
         let file = File::create(path)?;
         serde_json::to_writer(file, self)?;
         Ok(())
@@ -77,6 +121,35 @@ impl StackMetadata {
         Ok(())
     }
 
+    pub fn add_layer_at(
+        &mut self,
+        branch: &str,
+        base: &str,
+        position: usize,
+    ) -> Result<(), AddLayerError> {
+        // Check if this branch is already included
+        if self.layers.iter().any(|layer| layer.branch == branch) {
+            return Err(AddLayerError::LayerAlreadyExists);
+        }
+
+        if position > self.layers.len() {
+            self.layers.push(LayerMetadata {
+                branch: branch.to_string(),
+                base_oid: base.to_string(),
+            });
+        } else {
+            self.layers.insert(
+                position,
+                LayerMetadata {
+                    branch: branch.to_string(),
+                    base_oid: base.to_string(),
+                },
+            );
+        }
+
+        Ok(())
+    }
+
     pub fn get_position(&self, branch: &str) -> Option<usize> {
         self.layers.iter().position(|layer| layer.branch == branch)
     }
@@ -93,7 +166,7 @@ pub fn get_stack_metadata_path(repo: &Path, filename: &str) -> Result<PathBuf, s
     Ok(directory.join(filename))
 }
 
-pub fn get_stack_for_branch(repo: &Path, branch_name: &str) -> Option<PathBuf> {
+pub fn get_stack_for_branch(repo: &Path, branch_name: &str) -> Option<Stack> {
     let stack_metadata_folder = repo.join(STACK_METADATA_PATH).join("stacks");
 
     if !stack_metadata_folder.exists() {
@@ -106,17 +179,30 @@ pub fn get_stack_for_branch(repo: &Path, branch_name: &str) -> Option<PathBuf> {
             for entry in read_dir.flatten() {
                 let path = entry.path();
                 if path.is_file()
-                    && let Ok(metadata) = StackMetadata::try_from(path.as_path())
-                    && metadata
+                    && let Ok(stack) = Stack::try_from(path.as_path())
+                    && stack
+                        .metadata
                         .layers
                         .iter()
                         .any(|layer| layer.branch == branch_name)
                 {
-                    return Some(path);
+                    return Some(stack);
                 }
             }
         }
         Err(_) => return None,
     }
     None
+}
+
+pub fn get_stack_by_name(git_folder: &Path, name: &str) -> Option<Stack> {
+    let stack_metadata_folder = git_folder
+        .join(STACK_METADATA_PATH)
+        .join("stacks")
+        .join(format!("{}.json", name));
+    if !stack_metadata_folder.exists() {
+        return None;
+    }
+
+    stack_metadata_folder.as_path().try_into().ok()
 }

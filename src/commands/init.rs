@@ -3,7 +3,7 @@ use std::fs::create_dir_all;
 use crate::{
     commands::{CliError, Ctx},
     git::{DEFAULT_BRANCH_TARGET, current_ref, get_current_branch},
-    metadata::{StackMetadata, get_stack_metadata_path},
+    metadata::{Stack, get_stack_metadata_path},
 };
 
 #[derive(Debug, clap::Args)]
@@ -41,11 +41,11 @@ pub async fn run(ctx: &Ctx, args: Args) -> Result<(), CliError> {
         return Err(CliError::StackExists(name));
     }
 
-    let mut metadata = StackMetadata::new(&target);
+    let mut stack = Stack::new(&stack_metadata_file, &target);
     let base = args.base.unwrap_or(current_ref(&ctx.cwd).await?);
-    metadata.add_layer(&current_branch, &base).unwrap();
+    stack.add_layer(&current_branch, &base)?;
 
-    metadata.write(stack_metadata_file)?;
+    stack.save()?;
 
     println!("Initialized new stack with the target branch: {}", target);
     Ok(())

@@ -1,12 +1,13 @@
 use std::{env, path::PathBuf};
 
 use crate::{
-    git::{GitRepoError, get_repo_git_folder},
-    metadata::get_stack_metadata_path,
+    git::{GitRepoError, get_current_branch, get_repo_git_folder},
+    metadata::{AddLayerError, Stack, get_stack_for_branch, get_stack_metadata_path},
 };
 
 pub mod delete;
 pub mod init;
+pub mod insert;
 pub mod list;
 pub mod status;
 
@@ -24,9 +25,13 @@ pub enum CliError {
     StackExists(String),
     #[error("Stack not found: {0}")]
     StackNotFound(String),
+    #[error("Layer not found: {0}")]
+    LayerNotFound(String),
 
     #[error("I/O error: {0}")]
     IoError(#[from] std::io::Error),
+    #[error("Stack metadata error: {0}")]
+    AddLayerError(#[from] AddLayerError),
     #[error("Git repository error: {0}")]
     GitRepoError(#[from] GitRepoError),
 }
@@ -45,5 +50,13 @@ impl Ctx {
 
     pub fn stack_folder(&self) -> Result<PathBuf, CliError> {
         Ok(get_stack_metadata_path(&self.git_folder, "stacks")?)
+    }
+
+    pub async fn current_stack(&self) -> Result<Option<Stack>, CliError> {
+        let current_branch = get_current_branch(&self.cwd)
+            .await?
+            .ok_or(CliError::NotOnBranch)?;
+        let current_stack = get_stack_for_branch(&self.git_folder, &current_branch);
+        Ok(current_stack)
     }
 }
