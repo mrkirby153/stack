@@ -34,6 +34,8 @@ enum Command {
     Init(commands::init::Args),
     /// Deletes an existing stack
     Delete(commands::delete::Args),
+    /// Lists all stacks
+    List,
 }
 
 #[tokio::main]
@@ -54,6 +56,7 @@ async fn run() -> Result<(), CliError> {
     match cli.command {
         Command::Init(args) => commands::init::run(&ctx, args).await,
         Command::Delete(args) => commands::delete::run(&ctx, args).await,
+        Command::List => commands::list::run(&ctx).await,
         _ => Err(CliError::UnsupportedSubcommand),
     }
 }
