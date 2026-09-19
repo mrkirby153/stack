@@ -39,6 +39,12 @@ impl TryFrom<PathBuf> for StackMetadata {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum AddLayerError {
+    #[error("Layer already exists")]
+    LayerAlreadyExists,
+}
+
 impl StackMetadata {
     /// Creates a new stack metadata with the specified target
     pub fn new(target: &str) -> Self {
@@ -53,6 +59,21 @@ impl StackMetadata {
     pub fn write(&self, path: PathBuf) -> Result<(), std::io::Error> {
         let file = File::create(path)?;
         serde_json::to_writer(file, self)?;
+        Ok(())
+    }
+
+    /// Adds a new layer to the stack
+    pub fn add_layer(&mut self, branch: &str, base: &str) -> Result<(), AddLayerError> {
+        // Check if this brannch is already included
+        if self.layers.iter().any(|layer| layer.branch == branch) {
+            return Err(AddLayerError::LayerAlreadyExists);
+        }
+
+        self.layers.push(LayerMetadata {
+            branch: branch.to_string(),
+            base_oid: base.to_string(),
+        });
+
         Ok(())
     }
 }

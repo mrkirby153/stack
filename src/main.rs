@@ -2,9 +2,8 @@ use std::{env, fs::create_dir_all};
 
 use clap::Parser;
 
-use crate::Command::Init;
 use stack::{
-    git::{DEFAULT_BRANCH_TARGET, get_current_branch, get_repo_git_folder},
+    git::{DEFAULT_BRANCH_TARGET, current_ref, get_current_branch, get_repo_git_folder},
     metadata::{StackMetadata, get_stack_metadata_path},
 };
 /// A tool for managing git stacks
@@ -39,9 +38,23 @@ enum Command {
     /// Initializes a new stack using the current branch as the base
     Init {
         /// The target branch for the stack. Defaults to `main`
+        #[clap(long)]
         target: Option<String>,
         /// The name of the new stack. Defaults to the current branch name.
+        #[clap(long)]
         name: Option<String>,
+        /// Overwrite the stack if it already exists
+        #[clap(long, default_value_t = false)]
+        force: bool,
+
+        /// The git reference for the base of the new stack. Defaults to the current HEAD.
+        #[clap(long)]
+        base: Option<String>,
+    },
+    /// Deletes an existing stack
+    Delete {
+        /// The name of the stack to delete
+        name: String,
     },
 }
 
@@ -53,6 +66,8 @@ enum CliError {
     TargetBranchMatchesCurrent,
     #[error("Stack already exists: {0}")]
     StackExists(String),
+    #[error("Stack not found: {0}")]
+    StackNotFound(String),
 
     #[error("I/O error: {0}")]
     IoError(#[from] std::io::Error),
@@ -77,7 +92,12 @@ async fn run() -> Result<(), CliError> {
     let git_folder = get_repo_git_folder(&cwd).await?;
 
     match cli.command {
-        Init { name, target } => {
+        Command::Init {
+            name,
+            target,
+            force,
+            base,
+        } => {
             let target = target.unwrap_or(DEFAULT_BRANCH_TARGET.to_string());
             let current_branch = get_current_branch(&cwd).await?;
 
@@ -89,15 +109,29 @@ async fn run() -> Result<(), CliError> {
             create_dir_all(&stack_metadata_folder)?;
             let stack_metadata_file = stack_metadata_folder.join(format!("{}.json", name));
 
-            if stack_metadata_file.exists() {
+            if stack_metadata_file.exists() && !force {
                 return Err(CliError::StackExists(name));
             }
 
-            let metadata = StackMetadata::new(&target);
+            let mut metadata = StackMetadata::new(&target);
+            let base = base.unwrap_or(current_ref(&cwd).await?);
+            metadata.add_layer(&current_branch, &base).unwrap();
+
             metadata.write(stack_metadata_file)?;
 
             println!("Initialized new stack with the target branch: {}", target);
             Ok(())
+        }
+        Command::Delete { name } => {
+            let stack_metadata_folder = get_stack_metadata_path(&git_folder, "stacks")?;
+            let stack_metadata_file = stack_metadata_folder.join(format!("{}.json", name));
+            if stack_metadata_file.exists() {
+                std::fs::remove_file(stack_metadata_file)?;
+                println!("Deleted stack: {}", name);
+                Ok(())
+            } else {
+                Err(CliError::StackNotFound(name))
+            }
         }
         _ => Err(CliError::UnsupportedSubcommand),
     }
