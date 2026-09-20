@@ -41,8 +41,9 @@ pub enum Error {
     #[error(
         "Layer '{branch}' has no commits over its base (base == tip: {base}). \
          Restacking would re-point the branch and silently drop all of its work. \
-         This is almost always wrong layer metadata — check how it was added \
-         (`stack insert --from <base>`) and fix the stack metadata, then retry."
+         This happens if the branch has no commits yet (make your first commit, \
+         then restack), or if the layer's base in the stack metadata is wrong \
+         (check how it was added with `stack insert --from <base>`)."
     )]
     EmptyLayer { branch: String, base: String },
     #[error(
@@ -50,6 +51,21 @@ pub enum Error {
          `stack {op} --continue` — or restore the previous state with `stack {op} --undo`.\n{details}"
     )]
     RestackConflict { branch: String, op: String, details: String },
+    #[error(
+        "Target '{target}' ({target_oid}) is behind the bottom layer '{branch}' ({bottom_tip}) — \
+         '{branch}'s work is not in '{target}' yet. Advancing would drop '{branch}' from the stack \
+         while re-targeting the remaining layers onto a '{target}' that lacks it.\n\n\
+         This happens if the bottom layer's PR has not landed in '{target}' yet, or if your local \
+         '{target}' is stale. Update the local target first:\n\
+             git fetch origin {target}:{target}\n\
+         then retry `stack advance`. Use `stack advance --force` to advance anyway."
+    )]
+    TargetBehindBottom {
+        target: String,
+        target_oid: String,
+        branch: String,
+        bottom_tip: String,
+    },
 }
 
 /// Snapshot file names. Restack and advance keep separate snapshots so
@@ -106,6 +122,9 @@ pub struct AdvanceArgs {
     #[clap(long, action)]
     /// Undoes the last advance operation
     undo: bool,
+    #[clap(long, action)]
+    /// Advance even if the target is behind the bottom layer's work
+    force: bool,
 }
 
 /// Advances the current stack forward by one layer: the bottom layer
@@ -133,6 +152,28 @@ pub async fn advance(ctx: &Ctx, args: AdvanceArgs) -> Result<(), CliError> {
         .first()
         .map(|l| l.branch.clone())
         .expect("stack always has at least one layer");
+
+    // Guard: the target must not sit *behind* the bottom layer's work, or we
+    // would drop the bottom and re-target the rest onto a target that lacks
+    // it. This check is TOCTOU-safe: it only distinguishes "target is missing
+    // the bottom's commits" from "target contains them (possibly squashed)",
+    // and a target that already contains them can only move further ahead —
+    // so a passing check cannot become stale as the target advances.
+    let target_oid = current_ref_for_branch(&ctx.cwd, &current_stack.target).await?;
+    let bottom_tip = current_ref_for_branch(&ctx.cwd, &bottom_branch).await?;
+    if !args.force
+        && target_oid != bottom_tip
+        && is_ancestor(ctx, &target_oid, &bottom_tip).await?
+    {
+        return Err(Error::TargetBehindBottom {
+            target: current_stack.target.clone(),
+            target_oid,
+            branch: bottom_branch,
+            bottom_tip,
+        }
+        .into());
+    }
+
     start_operation(ctx, "advance", &current_stack, Some(bottom_branch)).await
 }
 
@@ -269,10 +310,23 @@ async fn process_pending(ctx: &Ctx, state: &mut OpState, op: &str) -> Result<(),
             // re-apply, just re-point it at the new base.
             let new_tip = new_base;
             update_refs_atomic(&ctx.cwd, &[(next.branch.as_str(), new_tip.as_str())]).await?;
-        } else if is_ancestor(ctx, &new_base, &next.old_tip).await? {
-            // Fast path: the layer already sits on its new base (e.g. it
-            // didn't need to move). The branch keeps its tip.
+        } else if new_base == next.old_base {
+            // Fast path: the base didn't move (e.g. the layer below didn't
+            // change), so the layer is already correctly positioned. The
+            // branch keeps its tip.
+            //
+            // Note: this must be an exact match, not "new_base is an ancestor
+            // of old_tip" — the latter also fires when the new base is *before*
+            // the layer's own base (a stale target), which would silently make
+            // this layer own the commits of the dropped layers below it.
             let new_tip = next.old_tip;
+            update_refs_atomic(&ctx.cwd, &[(next.branch.as_str(), new_tip.as_str())]).await?;
+        } else if is_ancestor(ctx, &next.old_tip, &new_base).await? {
+            // Fast path: every commit of this layer is already contained in
+            // the new base (e.g. it was merged into the target in the
+            // meantime). Re-applying would produce an empty cherry-pick, so
+            // just fast-forward the branch to the new base.
+            let new_tip = new_base;
             update_refs_atomic(&ctx.cwd, &[(next.branch.as_str(), new_tip.as_str())]).await?;
         } else {
             // Detach so updating the branch ref below never fights with the
