@@ -101,12 +101,13 @@ pub struct AdvanceArgs {
     undo: bool,
 }
 
-/// Advances the current stack forward by one layer: restacks every layer
-/// onto the target, then drops the top layer from the stack.
+/// Advances the current stack forward by one layer: the bottom layer
+/// (closest to the target) is assumed to have been merged into the target
+/// externally, so it is dropped from the stack and the remaining layers are
+/// re-targeted onto the target.
 ///
-/// Dropping the top requires no extra git work — once the first restack
-/// completes, the remaining layers are already stacked on the target, so
-/// "advance" is just "restack + drop the top in the final metadata".
+/// The dropped bottom layer's branch is left untouched — it is excluded from
+/// the rebase entirely, so the new bottom lands directly on the target.
 pub async fn advance(ctx: &Ctx, args: AdvanceArgs) -> Result<(), CliError> {
     if args.continue_ {
         return continue_operation(ctx, "advance").await;
@@ -120,12 +121,12 @@ pub async fn advance(ctx: &Ctx, args: AdvanceArgs) -> Result<(), CliError> {
     }
 
     let current_stack = ctx.current_stack().await?.ok_or(NoStack)?;
-    let top_branch = current_stack
+    let bottom_branch = current_stack
         .layers
-        .last()
+        .first()
         .map(|l| l.branch.clone())
         .expect("stack always has at least one layer");
-    start_operation(ctx, "advance", &current_stack, Some(top_branch)).await
+    start_operation(ctx, "advance", &current_stack, Some(bottom_branch)).await
 }
 
 /// Starts a new operation (the caller has verified none is in flight):
@@ -144,6 +145,12 @@ async fn start_operation(
     let target_oid = current_ref_for_branch(&ctx.cwd, &stack.target).await?;
     let mut pending = Vec::with_capacity(stack.layers.len());
     for layer in &stack.layers {
+        // For advance, the dropped (bottom) layer has already been merged
+        // into the target; skip it so the new bottom rebases directly onto
+        // the target.
+        if dropped.as_deref() == Some(layer.branch.as_str()) {
+            continue;
+        }
         let old_tip = current_ref_for_branch(&ctx.cwd, &layer.branch).await?;
         // The rebase range is `old_base..old_tip`; require the base to be an
         // ancestor of the tip, otherwise the range would silently include
@@ -289,7 +296,7 @@ async fn finalize(ctx: &Ctx, state: &OpState) -> Result<(), CliError> {
     let mut stack = get_stack_by_name(&ctx.git_folder, &state.undo.stack_name)
         .ok_or(StackNotFound(state.undo.stack_name.clone()))?;
 
-    // Advance: the dropped top layer leaves the stack (its branch is
+    // Advance: the dropped bottom layer leaves the stack (its branch is
     // untouched).
     if let Some(dropped) = &state.dropped {
         stack.remove_layer(dropped);
@@ -466,7 +473,7 @@ struct OpState {
     /// Layers left to process, in bottom-up order. After a conflict, the
     /// failed layer is at the front.
     pending: Vec<PendingLayer>,
-    /// For advance: the top layer to remove from the final metadata.
+    /// For advance: the bottom layer to remove from the final metadata.
     dropped: Option<String>,
     /// The pre-operation snapshot, used by `--undo`.
     undo: UndoSnapshot,
