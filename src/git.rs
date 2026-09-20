@@ -14,6 +14,8 @@ const ZERO_SHA: &str = "0000000000000000000000000000000000000000";
 pub enum GitRepoError {
     #[error("Error executing git command \"{0}\": {1}")]
     GitCommandError(String, String),
+    #[error("git command exited with status {0}")]
+    GitStatus(u32),
     #[error("Error executing git command in the foreground: {0}")]
     ForegroundGitError(String),
     #[error("Error converting command output to UTF-8: {0}")]
@@ -55,6 +57,41 @@ pub async fn current_ref_for_branch(dir: &Path, branch: &str) -> Result<String, 
 
 pub async fn checkout_branch(dir: &Path, branch: &str) -> Result<(), GitRepoError> {
     foreground_git(dir, vec!["checkout", branch]).await
+}
+
+/// Detaches HEAD at the given ref. Used before cherry-picking so that
+/// updating stack branches does not fight with the user's checked-out branch.
+pub async fn checkout(dir: &Path, reference: &str) -> Result<(), GitRepoError> {
+    let (status, _stderr) = git_status(dir, vec!["checkout", "--detach", reference]).await?;
+    if status != 0 {
+        return Err(GitRepoError::GitStatus(status));
+    }
+    Ok(())
+}
+
+/// Runs a git command without requiring a successful exit, returning the
+/// exit status and stderr. Useful for commands that legitimately fail
+/// (e.g. `cherry-pick` on conflict) where the caller decides what happens.
+pub async fn git_status(
+    dir: &Path,
+    args: Vec<&str>,
+) -> Result<(u32, String), GitRepoError> {
+    let mut command = Command::new("git");
+    command.args(args.clone()).current_dir(dir);
+    let output = command.output().await?;
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    Ok((output.status.code().unwrap_or(1) as u32, stderr))
+}
+
+/// Returns true if the index has unmerged (conflicted) paths, i.e. a
+/// cherry-pick/rebase conflict that has not been resolved yet.
+pub async fn has_unmerged_paths(dir: &Path) -> Result<bool, GitRepoError> {
+    let output = Command::new("git")
+        .args(["diff", "--name-only", "--diff-filter=U"])
+        .current_dir(dir)
+        .output()
+        .await?;
+    Ok(!output.stdout.is_empty())
 }
 
 pub async fn update_refs_atomic(dir: &Path, updates: &[(&str, &str)]) -> Result<(), GitRepoError> {
