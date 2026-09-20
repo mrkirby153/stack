@@ -115,13 +115,19 @@ pub async fn count_commits(
 }
 
 pub async fn checkout_branch(dir: &Path, branch: &str) -> Result<(), GitRepoError> {
-    foreground_git(dir, vec!["checkout", branch]).await
+    // Get current
+    let current_branch = get_current_branch(dir).await?;
+    if current_branch == Some(branch.to_string()) {
+        return Ok(());
+    }
+    foreground_git(dir, vec!["checkout", "--quiet", branch]).await
 }
 
 /// Detaches HEAD at the given ref. Used before cherry-picking so that
 /// updating stack branches does not fight with the user's checked-out branch.
 pub async fn checkout(dir: &Path, reference: &str) -> Result<(), GitRepoError> {
-    let (status, _stderr) = git_status(dir, vec!["checkout", "--detach", reference]).await?;
+    let (status, _stderr) =
+        git_status(dir, vec!["checkout", "--quiet", "--detach", reference]).await?;
     if status != 0 {
         return Err(GitRepoError::GitStatus(status));
     }

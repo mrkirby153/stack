@@ -223,6 +223,7 @@ async fn start_operation(
 
     let target_oid = current_ref_for_branch(&ctx.cwd, &stack.target).await?;
     let mut pending = Vec::with_capacity(stack.layers.len());
+    println!("=> Gathering metadata...");
     for layer in &stack.layers {
         // For advance, the dropped (bottom) layer has already been merged
         // into the target; skip it so the new bottom rebases directly onto
@@ -268,6 +269,7 @@ async fn start_operation(
         undo: undo_snapshot,
     };
     save_state(ctx, &state).await?;
+    println!("=> Computed {} operations", state.pending.len());
 
     let mut state = state;
     process_pending(ctx, &mut state, op).await
@@ -340,12 +342,17 @@ async fn continue_operation(ctx: &Ctx, expected_op: &str) -> Result<(), CliError
 /// `--continue` picks up exactly where this left off.
 async fn process_pending(ctx: &Ctx, state: &mut OpState, op: &str) -> Result<(), CliError> {
     while let Some(next) = state.pending.first().cloned() {
+        println!("=> Re-stacking layer: {}", next.branch);
         let new_base = state.new_base_for_next.clone();
 
         if next.old_tip == next.old_base {
             // Empty layer (branch already at its old base): nothing to
             // re-apply, just re-point it at the new base.
             let new_tip = new_base;
+            println!(
+                "=> Empty layer: re-pointing {} at new base {}",
+                next.branch, new_tip
+            );
             update_refs_atomic(&ctx.cwd, &[(next.branch.as_str(), new_tip.as_str())]).await?;
         } else if new_base == next.old_base {
             // Fast path: the base didn't move (e.g. the layer below didn't
@@ -357,6 +364,10 @@ async fn process_pending(ctx: &Ctx, state: &mut OpState, op: &str) -> Result<(),
             // the layer's own base (a stale target), which would silently make
             // this layer own the commits of the dropped layers below it.
             let new_tip = next.old_tip;
+            println!(
+                "==> Layer unchanged: {} remains at {}",
+                next.branch, new_tip
+            );
             update_refs_atomic(&ctx.cwd, &[(next.branch.as_str(), new_tip.as_str())]).await?;
         } else if is_ancestor(ctx, &next.old_tip, &new_base).await? {
             // Fast path: every commit of this layer is already contained in
@@ -364,6 +375,7 @@ async fn process_pending(ctx: &Ctx, state: &mut OpState, op: &str) -> Result<(),
             // meantime). Re-applying would produce an empty cherry-pick, so
             // just fast-forward the branch to the new base.
             let new_tip = new_base;
+            println!("==> Fast-forwarding {} to {}", next.branch, new_tip);
             update_refs_atomic(&ctx.cwd, &[(next.branch.as_str(), new_tip.as_str())]).await?;
         } else {
             // Detach so updating the branch ref below never fights with the
@@ -389,6 +401,7 @@ async fn process_pending(ctx: &Ctx, state: &mut OpState, op: &str) -> Result<(),
                 .into());
             }
             let new_tip = current_ref_for_branch(&ctx.cwd, "HEAD").await?;
+            println!("==> Cherry-picked {} onto {}", next.branch, new_tip);
             update_refs_atomic(&ctx.cwd, &[(next.branch.as_str(), new_tip.as_str())]).await?;
         }
 
