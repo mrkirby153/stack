@@ -79,6 +79,37 @@ pub async fn merge_base(dir: &Path, a: &str, b: &str) -> Result<Option<String>, 
     Ok(Some(base.trim().to_string()))
 }
 
+/// True if `ancestor` is an ancestor of `descendant` (a commit is its
+/// own ancestor). Fails if either ref cannot be resolved.
+pub async fn is_ancestor(dir: &Path, ancestor: &str, descendant: &str) -> Result<bool, GitRepoError> {
+    let (status, _) = git_status(
+        dir,
+        vec!["merge-base", "--is-ancestor", ancestor, descendant],
+    )
+    .await?;
+    Ok(status == 0)
+}
+
+/// The number of commits reachable from `descendant` but not from
+/// `ancestor` (i.e. `git rev-list --count ancestor..descendant`).
+pub async fn count_commits(
+    dir: &Path,
+    ancestor: &str,
+    descendant: &str,
+) -> Result<u64, GitRepoError> {
+    let count = git(
+        dir,
+        vec!["rev-list", "--count", &format!("{ancestor}..{descendant}")],
+    )
+    .await?;
+    count.parse::<u64>().map_err(|_| {
+        GitRepoError::GitCommandError(
+            format!("git rev-list --count {ancestor}..{descendant}"),
+            "could not parse commit count".to_string(),
+        )
+    })
+}
+
 pub async fn checkout_branch(dir: &Path, branch: &str) -> Result<(), GitRepoError> {
     foreground_git(dir, vec!["checkout", branch]).await
 }

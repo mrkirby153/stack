@@ -462,12 +462,7 @@ async fn restore_checkout(ctx: &Ctx, branch: Option<String>) -> Result<(), CliEr
 
 /// True if `ancestor` is an ancestor of `descendant`.
 async fn is_ancestor(ctx: &Ctx, ancestor: &str, descendant: &str) -> Result<bool, CliError> {
-    let (status, _) = git_status(
-        &ctx.cwd,
-        vec!["merge-base", "--is-ancestor", ancestor, descendant],
-    )
-    .await?;
-    Ok(status == 0)
+    Ok(crate::git::is_ancestor(&ctx.cwd, ancestor, descendant).await?)
 }
 
 async fn state_path(ctx: &Ctx) -> Result<PathBuf, CliError> {
