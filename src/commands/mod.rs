@@ -9,6 +9,7 @@ pub mod delete;
 pub mod init;
 pub mod insert;
 pub mod list;
+pub mod movement;
 pub mod remove;
 pub mod status;
 
@@ -59,5 +60,10 @@ impl Ctx {
             .ok_or(CliError::NotOnBranch)?;
         let current_stack = get_stack_for_branch(&self.git_folder, &current_branch);
         Ok(current_stack)
+    }
+
+    pub async fn current_branch(&self) -> Result<Option<String>, CliError> {
+        let branch = get_current_branch(&self.cwd).await?;
+        Ok(branch)
     }
 }

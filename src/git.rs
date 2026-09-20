@@ -9,6 +9,8 @@ pub const DEFAULT_BRANCH_TARGET: &str = "main";
 pub enum GitRepoError {
     #[error("Error executing git command \"{0}\": {1}")]
     GitCommandError(String, String),
+    #[error("Error executing git command in the foreground: {0}")]
+    ForegroundGitError(String),
     #[error("Error converting command output to UTF-8: {0}")]
     CommandUtfError(#[from] std::string::FromUtf8Error),
     #[error("Not on any branch")]
@@ -39,6 +41,10 @@ pub async fn current_ref(dir: &PathBuf) -> Result<String, GitRepoError> {
     Ok(reference)
 }
 
+pub async fn checkout_branch(dir: &PathBuf, branch: &str) -> Result<(), GitRepoError> {
+    foreground_git(dir, vec!["checkout", branch]).await
+}
+
 async fn git(dir: &PathBuf, args: Vec<&str>) -> Result<String, GitRepoError> {
     let mut command = Command::new("git");
     command.args(args.clone()).current_dir(dir);
@@ -58,4 +64,21 @@ async fn git(dir: &PathBuf, args: Vec<&str>) -> Result<String, GitRepoError> {
         .to_string();
 
     Ok(result)
+}
+
+async fn foreground_git(dir: &PathBuf, args: Vec<&str>) -> Result<(), GitRepoError> {
+    let mut command = Command::new("git");
+    command.args(args.clone()).current_dir(dir);
+
+    let mut child = command.spawn()?;
+
+    let status = child.wait().await?;
+    if !status.success() {
+        return Err(GitRepoError::ForegroundGitError(format!(
+            "git {}",
+            args.join(" ")
+        )));
+    }
+
+    Ok(())
 }

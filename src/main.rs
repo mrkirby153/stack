@@ -60,6 +60,10 @@ async fn run() -> Result<(), CliError> {
         Command::Status => commands::status::run(&ctx).await,
         Command::Insert(args) => commands::insert::run(&ctx, args).await,
         Command::Remove(args) => commands::remove::run(&ctx, args).await,
+        Command::Up => commands::movement::up(&ctx).await,
+        Command::Down => commands::movement::down(&ctx).await,
+        Command::Top => commands::movement::top(&ctx).await,
+        Command::Bottom => commands::movement::bottom(&ctx).await,
         _ => Err(CliError::UnsupportedSubcommand),
     }
 }
