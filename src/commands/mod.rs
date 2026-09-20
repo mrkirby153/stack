@@ -32,6 +32,11 @@ pub enum CliError {
     StackNotFound(String),
     #[error("Layer not found: {0}")]
     LayerNotFound(String),
+    #[error(
+        "Could not determine a base for layer '{branch}': it shares no common \
+         ancestor with {candidate}. Pass --from <ref> to set the base explicitly."
+    )]
+    BaseUndeterminable { branch: String, candidate: String },
 
     #[error("I/O error: {0}")]
     IoError(#[from] std::io::Error),

@@ -55,6 +55,32 @@ pub async fn current_ref_for_branch(dir: &Path, branch: &str) -> Result<String, 
     Ok(reference)
 }
 
+/// Resolves an arbitrary ref (branch name, SHA, `HEAD~1`, ...) to a commit
+/// OID, so metadata can store stable SHAs instead of moving ref names.
+pub async fn resolve_ref(dir: &Path, reference: &str) -> Result<String, GitRepoError> {
+    let sha = git(
+        dir,
+        vec!["rev-parse", "--verify", &format!("{reference}^{{commit}}")],
+    )
+    .await?;
+    Ok(sha)
+}
+
+/// The merge base of two refs, or `None` if they have no common ancestor
+/// (or either ref cannot be resolved).
+pub async fn merge_base(dir: &Path, a: &str, b: &str) -> Result<Option<String>, GitRepoError> {
+    let output = Command::new("git")
+        .args(["merge-base", a, b])
+        .current_dir(dir)
+        .output()
+        .await?;
+    if !output.status.success() {
+        return Ok(None);
+    }
+    let base = String::from_utf8(output.stdout).map_err(GitRepoError::CommandUtfError)?;
+    Ok(Some(base.trim().to_string()))
+}
+
 pub async fn checkout_branch(dir: &Path, branch: &str) -> Result<(), GitRepoError> {
     foreground_git(dir, vec!["checkout", branch]).await
 }

@@ -39,6 +39,13 @@ pub enum Error {
     )]
     InconsistentLayer { branch: String, base: String },
     #[error(
+        "Layer '{branch}' has no commits over its base (base == tip: {base}). \
+         Restacking would re-point the branch and silently drop all of its work. \
+         This is almost always wrong layer metadata — check how it was added \
+         (`stack insert --from <base>`) and fix the stack metadata, then retry."
+    )]
+    EmptyLayer { branch: String, base: String },
+    #[error(
         "Layer '{branch}' failed to rebase cleanly. Resolve the conflicts, then resume with \
          `stack {op} --continue` — or restore the previous state with `stack {op} --undo`.\n{details}"
     )]
@@ -152,6 +159,17 @@ async fn start_operation(
             continue;
         }
         let old_tip = current_ref_for_branch(&ctx.cwd, &layer.branch).await?;
+        // A layer whose base is its own tip has an empty replay range —
+        // restacking it would re-point the branch and drop all of its work.
+        // That is a metadata error (e.g. `stack insert` with the wrong base),
+        // so fail loudly before mutating anything.
+        if layer.base_oid == old_tip {
+            return Err(Error::EmptyLayer {
+                branch: layer.branch.clone(),
+                base: layer.base_oid.clone(),
+            }
+            .into());
+        }
         // The rebase range is `old_base..old_tip`; require the base to be an
         // ancestor of the tip, otherwise the range would silently include
         // other layers' commits.
