@@ -81,7 +81,11 @@ pub async fn merge_base(dir: &Path, a: &str, b: &str) -> Result<Option<String>, 
 
 /// True if `ancestor` is an ancestor of `descendant` (a commit is its
 /// own ancestor). Fails if either ref cannot be resolved.
-pub async fn is_ancestor(dir: &Path, ancestor: &str, descendant: &str) -> Result<bool, GitRepoError> {
+pub async fn is_ancestor(
+    dir: &Path,
+    ancestor: &str,
+    descendant: &str,
+) -> Result<bool, GitRepoError> {
     let (status, _) = git_status(
         dir,
         vec!["merge-base", "--is-ancestor", ancestor, descendant],

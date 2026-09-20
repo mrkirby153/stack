@@ -98,6 +98,15 @@ The check is deliberately TOCTOU-safe: it only looks at whether the target
 *contains the bottom layer's work*, so a fast-moving target (hundreds of
 commits a day) is fine as long as it has the merged commit.
 
+`advance` also requires the stack to already be consistent: every layer that
+will *survive* the advance must sit exactly on the tip of the layer below it
+(the same checks `stack status` uses). If a surviving layer is out of date,
+broken, or missing, `advance` refuses and points you at `stack status` /
+`stack restack` instead of silently mixing the two changes. The bottom being
+behind the target is not an issue anywhere — it is the normal post-merge
+state `advance` expects (see `stack status`) — but the bottom's integrity is
+still enforced.
+
 ### Conflicts
 
 If a layer fails to re-apply cleanly, the operation stops **before touching
@@ -138,7 +147,7 @@ advance.
 | `stack up` / `stack down` | Check out the layer above / below the current one. No-op at the top / bottom. |
 | `stack top` / `stack bottom` | Check out the top / bottom layer. |
 | `stack restack [--continue \| --undo]` | Re-apply every layer onto the layer below. `--continue` resumes a conflicted restack after you resolve it; `--undo` restores the pre-restack state. |
-| `stack advance [--continue \| --undo] [--force]` | Drop the (externally merged) bottom layer and re-target the rest onto the target. Refuses if the target is behind the bottom layer's work; `--force` overrides. Same `--continue`/`--undo` semantics. |
+| `stack advance [--continue \| --undo] [--force]` | Drop the (externally merged) bottom layer and re-target the rest onto the target. Refuses if the target is behind the bottom layer's work (`--force` overrides) or if the surviving layers are not up to date (run `stack restack` first). Same `--continue`/`--undo` semantics. |
 
 Every command also supports `--help` for details.
 
@@ -164,6 +173,14 @@ Every command also supports `--help` for details.
   check how it was added with `stack insert`), or
 - a layer's base is not an ancestor of its tip — the replay range would
   silently include other layers' commits.
+
+`advance` additionally requires the stack to be consistent (the same checks
+`stack status` uses): every surviving layer must sit exactly on the tip of
+the layer below it, so an out-of-date stack is refused instead of being
+silently restacked as a side effect — run `stack restack` first. The bottom
+being behind the target is not a problem (`stack status` counts it as up to
+date — it is the normal post-merge state `advance` expects), but the
+bottom's integrity is still enforced.
 
 ## Where state lives
 

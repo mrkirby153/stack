@@ -7,6 +7,7 @@ use crate::{
     },
 };
 
+pub mod consistency;
 pub mod delete;
 pub mod init;
 pub mod insert;

@@ -7,7 +7,10 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    commands::{CliError::{self, NoStack, StackNotFound}, Ctx},
+    commands::{
+        CliError::{self, NoStack, StackNotFound},
+        Ctx, consistency,
+    },
     git::{checkout, current_ref_for_branch, git_status, has_unmerged_paths, update_refs_atomic},
     metadata::{Stack, StackMetadata, get_stack_by_name},
 };
@@ -50,7 +53,11 @@ pub enum Error {
         "Layer '{branch}' failed to rebase cleanly. Resolve the conflicts, then resume with \
          `stack {op} --continue` — or restore the previous state with `stack {op} --undo`.\n{details}"
     )]
-    RestackConflict { branch: String, op: String, details: String },
+    RestackConflict {
+        branch: String,
+        op: String,
+        details: String,
+    },
     #[error(
         "Target '{target}' ({target_oid}) is behind the bottom layer '{branch}' ({bottom_tip}) — \
          '{branch}'s work is not in '{target}' yet. Advancing would drop '{branch}' from the stack \
@@ -66,6 +73,12 @@ pub enum Error {
         branch: String,
         bottom_tip: String,
     },
+    #[error(
+        "Stack is not up to date — refusing to advance:\n{problems}\n\n\n\
+         Fix the stack first (e.g. run `stack restack` if it needs restacking), \
+         then retry `stack advance`. `stack status` shows the current state."
+    )]
+    StackNotUpToDate { problems: String },
 }
 
 /// Snapshot file names. Restack and advance keep separate snapshots so
@@ -161,15 +174,33 @@ pub async fn advance(ctx: &Ctx, args: AdvanceArgs) -> Result<(), CliError> {
     // so a passing check cannot become stale as the target advances.
     let target_oid = current_ref_for_branch(&ctx.cwd, &current_stack.target).await?;
     let bottom_tip = current_ref_for_branch(&ctx.cwd, &bottom_branch).await?;
-    if !args.force
-        && target_oid != bottom_tip
-        && is_ancestor(ctx, &target_oid, &bottom_tip).await?
+    if !args.force && target_oid != bottom_tip && is_ancestor(ctx, &target_oid, &bottom_tip).await?
     {
         return Err(Error::TargetBehindBottom {
             target: current_stack.target.clone(),
             target_oid,
             branch: bottom_branch,
             bottom_tip,
+        }
+        .into());
+    }
+
+    // Gate: the stack must already be consistent — every layer must sit
+    // exactly on the tip of the layer below it (i.e. `stack status` would
+    // show it up to date). If it is out of date, run `stack restack`
+    // first; advancing on top of a shifted stack would silently mix the
+    // two changes. (The bottom being behind the target is not a problem —
+    // that is the normal post-merge state `advance` expects.)
+    let checks = consistency::evaluate(ctx, &current_stack).await?;
+    let mut problems: Vec<String> = Vec::new();
+    for check in &checks {
+        if let Some(issue) = &check.issue {
+            problems.push(format!("  {}: {}", check.branch, issue.describe()));
+        }
+    }
+    if !problems.is_empty() {
+        return Err(Error::StackNotUpToDate {
+            problems: problems.join("\n"),
         }
         .into());
     }
@@ -254,7 +285,10 @@ async fn continue_operation(ctx: &Ctx, expected_op: &str) -> Result<(), CliError
             op: expected_op.to_string(),
         })?;
     if state.op != expected_op {
-        return Err(Error::OperationInFlight { op: state.op.clone() }.into());
+        return Err(Error::OperationInFlight {
+            op: state.op.clone(),
+        }
+        .into());
     }
 
     let (has_pick_head, _) = git_status(
@@ -263,11 +297,14 @@ async fn continue_operation(ctx: &Ctx, expected_op: &str) -> Result<(), CliError
     )
     .await?;
     if has_pick_head == 0 {
-        let conflicted = state.pending.first().cloned().ok_or_else(|| {
-            Error::NoInFlightOperation {
-                op: expected_op.to_string(),
-            }
-        })?;
+        let conflicted =
+            state
+                .pending
+                .first()
+                .cloned()
+                .ok_or_else(|| Error::NoInFlightOperation {
+                    op: expected_op.to_string(),
+                })?;
 
         if has_unmerged_paths(&ctx.cwd).await? {
             return Err(Error::ConflictsNotResolved {
@@ -335,7 +372,10 @@ async fn process_pending(ctx: &Ctx, state: &mut OpState, op: &str) -> Result<(),
             checkout(&ctx.cwd, &new_base).await?;
             let (status, stderr) = git_status(
                 &ctx.cwd,
-                vec!["cherry-pick", &format!("{}..{}", next.old_base, next.old_tip)],
+                vec![
+                    "cherry-pick",
+                    &format!("{}..{}", next.old_base, next.old_tip),
+                ],
             )
             .await?;
             if status != 0 {
@@ -392,8 +432,7 @@ async fn finalize(ctx: &Ctx, state: &OpState) -> Result<(), CliError> {
     if let Some(dropped) = &state.dropped {
         println!(
             "Advanced stack '{}' (dropped layer '{}')",
-            state.undo.stack_name,
-            dropped
+            state.undo.stack_name, dropped
         );
     } else {
         println!("Restacked stack '{}'", state.undo.stack_name);
@@ -497,8 +536,7 @@ async fn snapshot_path(ctx: &Ctx, file: &str) -> Result<PathBuf, CliError> {
 async fn write_snapshot(ctx: &Ctx, file: &str, snapshot: &UndoSnapshot) -> Result<(), CliError> {
     let path = snapshot_path(ctx, file).await?;
     let undo_file = File::create(path)?;
-    serde_json::to_writer(undo_file, snapshot)
-        .map_err(|_| Error::FailedToWriteUndoSnapshot)?;
+    serde_json::to_writer(undo_file, snapshot).map_err(|_| Error::FailedToWriteUndoSnapshot)?;
     Ok(())
 }
 
