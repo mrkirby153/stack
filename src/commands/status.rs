@@ -12,11 +12,11 @@ pub async fn run(ctx: &Ctx) -> Result<(), CliError> {
 
     println!();
     let position = current_stack.get_position(&current_branch);
-    println!(
-        "Position {} of {}",
-        position.map(|p| p + 1).unwrap_or(0),
-        current_stack.size()
-    );
+
+    for (i, layer) in current_stack.layers.iter().enumerate() {
+        let marker = if Some(i) == position { "*" } else { " " };
+        println!("{} {}", marker, layer.branch);
+    }
 
     Ok(())
 }
