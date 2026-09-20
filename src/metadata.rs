@@ -1,5 +1,4 @@
 use std::{
-    env::temp_dir,
     fs::File,
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},

@@ -8,8 +8,6 @@ use crate::git::GitRepoError::CommandUtfError;
 
 pub const DEFAULT_BRANCH_TARGET: &str = "main";
 
-const ZERO_SHA: &str = "0000000000000000000000000000000000000000";
-
 #[derive(Debug, thiserror::Error)]
 pub enum GitRepoError {
     #[error("Error executing git command \"{0}\": {1}")]
@@ -98,10 +96,7 @@ pub async fn checkout(dir: &Path, reference: &str) -> Result<(), GitRepoError> {
 /// Runs a git command without requiring a successful exit, returning the
 /// exit status and stderr. Useful for commands that legitimately fail
 /// (e.g. `cherry-pick` on conflict) where the caller decides what happens.
-pub async fn git_status(
-    dir: &Path,
-    args: Vec<&str>,
-) -> Result<(u32, String), GitRepoError> {
+pub async fn git_status(dir: &Path, args: Vec<&str>) -> Result<(u32, String), GitRepoError> {
     let mut command = Command::new("git");
     command.args(args.clone()).current_dir(dir);
     let output = command.output().await?;
