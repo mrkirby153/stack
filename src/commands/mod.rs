@@ -2,7 +2,9 @@ use std::{env, path::PathBuf};
 
 use crate::{
     git::{GitRepoError, get_current_branch, get_repo_git_folder},
-    metadata::{AddLayerError, Stack, get_stack_for_branch, get_stack_metadata_path},
+    metadata::{
+        AddLayerError, STACK_METADATA_PATH, Stack, get_stack_for_branch, get_stack_metadata_path,
+    },
 };
 
 pub mod delete;
@@ -11,6 +13,7 @@ pub mod insert;
 pub mod list;
 pub mod movement;
 pub mod remove;
+pub mod restack;
 pub mod status;
 
 #[derive(Debug, thiserror::Error)]
@@ -36,6 +39,8 @@ pub enum CliError {
     AddLayerError(#[from] AddLayerError),
     #[error("Git repository error: {0}")]
     GitRepoError(#[from] GitRepoError),
+    #[error("{0}")]
+    RestackError(#[from] crate::commands::restack::Error),
 }
 
 pub struct Ctx {
@@ -65,5 +70,12 @@ impl Ctx {
     pub async fn current_branch(&self) -> Result<Option<String>, CliError> {
         let branch = get_current_branch(&self.cwd).await?;
         Ok(branch)
+    }
+
+    pub async fn stack_datadir(&self) -> Result<PathBuf, CliError> {
+        let directory = self.git_folder.join(STACK_METADATA_PATH);
+        // Ensure the stack metadata directory exists
+        std::fs::create_dir_all(&directory)?;
+        Ok(directory)
     }
 }

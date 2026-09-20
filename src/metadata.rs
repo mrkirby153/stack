@@ -1,4 +1,5 @@
 use std::{
+    env::temp_dir,
     fs::File,
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
@@ -7,7 +8,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 const STACK_METADATA_VERSION: i32 = 1;
-const STACK_METADATA_PATH: &str = "stack";
+pub const STACK_METADATA_PATH: &str = "stack";
 
 pub struct Stack {
     file: PathBuf,
@@ -74,12 +75,29 @@ impl Stack {
         self.metadata.write(&self.file)
     }
 
+    pub fn save_atomic(&self) -> Result<(), std::io::Error> {
+        let tmp = self
+            .file
+            .with_file_name(format!("{}.tmp.{}", self.name(), std::process::id()));
+        self.metadata.write(&tmp)?;
+        std::fs::rename(tmp, &self.file)?;
+        Ok(())
+    }
+
     pub fn name(&self) -> &str {
         self.file
             .file_name()
             .and_then(|f| f.to_str())
             .and_then(|s| s.strip_suffix(".json"))
             .unwrap_or("<<unknown>>")
+    }
+
+    pub fn metadata(&self) -> &StackMetadata {
+        &self.metadata
+    }
+
+    pub fn set_metadata(&mut self, metadata: StackMetadata) {
+        self.metadata = metadata;
     }
 }
 

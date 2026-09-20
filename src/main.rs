@@ -23,7 +23,7 @@ enum Command {
     Bottom,
 
     /// Restacks the layers of the stack
-    Restack,
+    Restack(commands::restack::RestackArgs),
     /// Advances the stack by one layer
     Advance,
     /// Inserts a new layer into the stack at a specified position
@@ -64,6 +64,7 @@ async fn run() -> Result<(), CliError> {
         Command::Down => commands::movement::down(&ctx).await,
         Command::Top => commands::movement::top(&ctx).await,
         Command::Bottom => commands::movement::bottom(&ctx).await,
-        _ => Err(CliError::UnsupportedSubcommand),
+        Command::Restack(args) => commands::restack::restack(&ctx, args).await,
+        Command::Advance => commands::restack::advance(&ctx).await,
     }
 }
