@@ -12,7 +12,7 @@ use crate::{
         Ctx, consistency,
     },
     git::{checkout, current_ref_for_branch, git_status, has_unmerged_paths, update_refs_atomic},
-    metadata::{Stack, StackMetadata, get_stack_by_name},
+    metadata::{Stack, StackMetadata, get_stack_by_name, get_stack_metadata_path},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -434,7 +434,13 @@ async fn finalize(ctx: &Ctx, state: &OpState) -> Result<(), CliError> {
         layer.base_oid = new_base;
         new_base = current_ref_for_branch(&ctx.cwd, &layer.branch).await?;
     }
-    stack.save_atomic()?;
+    if stack.layers.is_empty() {
+        // Advancing dropped the last remaining layer — delete the stack's
+        // metadata file rather than keeping an empty stack around.
+        std::fs::remove_file(stack.file_path())?;
+    } else {
+        stack.save_atomic()?;
+    }
 
     // Keep the pre-operation snapshot around so `--undo` can restore this
     // exact state; it is removed by `--undo`.
@@ -447,6 +453,12 @@ async fn finalize(ctx: &Ctx, state: &OpState) -> Result<(), CliError> {
             "Advanced stack '{}' (dropped layer '{}')",
             state.undo.stack_name, dropped
         );
+        if stack.layers.is_empty() {
+            println!(
+                "Stack '{}' is now empty and has been deleted",
+                state.undo.stack_name
+            );
+        }
     } else {
         println!("Restacked stack '{}'", state.undo.stack_name);
     }
@@ -478,8 +490,18 @@ async fn perform_undo(ctx: &Ctx, expected_op: &str, snapshot_file: &str) -> Resu
     // (No-op if there is nothing in progress.)
     let _ = git_status(&ctx.cwd, vec!["cherry-pick", "--abort"]).await;
 
-    let mut stack = get_stack_by_name(&ctx.git_folder, &undo_snapshot.stack_name)
-        .ok_or(StackNotFound(undo_snapshot.stack_name.clone()))?;
+    let mut stack = match get_stack_by_name(&ctx.git_folder, &undo_snapshot.stack_name) {
+        Some(stack) => stack,
+        // An advance that emptied the stack deleted its metadata file —
+        // recreate it so the snapshot below can restore the layers.
+        None => {
+            let stacks_dir = get_stack_metadata_path(&ctx.git_folder, "stacks")?;
+            Stack::new(
+                &stacks_dir.join(format!("{}.json", undo_snapshot.stack_name)),
+                &undo_snapshot.metadata.target,
+            )
+        },
+    };
 
     // Update the refs
     let previous_refs: Vec<(&str, &str)> = undo_snapshot

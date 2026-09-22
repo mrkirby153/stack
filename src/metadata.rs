@@ -91,6 +91,10 @@ impl Stack {
             .unwrap_or("<<unknown>>")
     }
 
+    pub fn file_path(&self) -> &Path {
+        &self.file
+    }
+
     pub fn metadata(&self) -> &StackMetadata {
         &self.metadata
     }
@@ -191,6 +195,11 @@ pub fn get_stack_metadata_path(repo: &Path, filename: &str) -> Result<PathBuf, s
     Ok(directory.join(filename))
 }
 
+/// Stack names may only contain ASCII letters, digits, and `-`.
+pub fn is_valid_stack_name(name: &str) -> bool {
+    !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+}
+
 pub fn get_stack_for_branch(repo: &Path, branch_name: &str) -> Option<Stack> {
     let stack_metadata_folder = repo.join(STACK_METADATA_PATH).join("stacks");
 
@@ -204,6 +213,11 @@ pub fn get_stack_for_branch(repo: &Path, branch_name: &str) -> Option<Stack> {
             for entry in read_dir.flatten() {
                 let path = entry.path();
                 if path.is_file()
+                    && let Some(name) = path
+                        .file_name()
+                        .and_then(|f| f.to_str())
+                        .and_then(|s| s.strip_suffix(".json"))
+                    && is_valid_stack_name(name)
                     && let Ok(stack) = Stack::try_from(path.as_path())
                     && stack
                         .metadata
@@ -221,6 +235,10 @@ pub fn get_stack_for_branch(repo: &Path, branch_name: &str) -> Option<Stack> {
 }
 
 pub fn get_stack_by_name(git_folder: &Path, name: &str) -> Option<Stack> {
+    if !is_valid_stack_name(name) {
+        return None;
+    }
+
     let stack_metadata_folder = git_folder
         .join(STACK_METADATA_PATH)
         .join("stacks")

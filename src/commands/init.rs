@@ -3,7 +3,7 @@ use std::fs::create_dir_all;
 use crate::{
     commands::{CliError, Ctx},
     git::{DEFAULT_BRANCH_TARGET, current_ref, get_current_branch},
-    metadata::{Stack, get_stack_metadata_path},
+    metadata::{Stack, get_stack_metadata_path, is_valid_stack_name},
 };
 
 #[derive(Debug, clap::Args)]
@@ -33,6 +33,9 @@ pub async fn run(ctx: &Ctx, args: Args) -> Result<(), CliError> {
         return Err(CliError::TargetBranchMatchesCurrent);
     }
     let name = args.name.unwrap_or(current_branch.clone());
+    if !is_valid_stack_name(&name) {
+        return Err(CliError::InvalidStackName(name));
+    }
     let stack_metadata_folder = get_stack_metadata_path(&ctx.git_folder, "stacks")?;
     create_dir_all(&stack_metadata_folder)?;
     let stack_metadata_file = stack_metadata_folder.join(format!("{}.json", name));
