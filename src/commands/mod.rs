@@ -13,6 +13,7 @@ pub mod init;
 pub mod insert;
 pub mod list;
 pub mod movement;
+pub mod publish;
 pub mod remove;
 pub mod restack;
 pub mod status;
@@ -50,6 +51,8 @@ pub enum CliError {
     GitRepoError(#[from] GitRepoError),
     #[error("{0}")]
     RestackError(#[from] crate::commands::restack::Error),
+    #[error("{0}")]
+    PublishError(#[from] crate::commands::publish::Error),
 }
 
 pub struct Ctx {

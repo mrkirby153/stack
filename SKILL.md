@@ -1,6 +1,6 @@
 ---
 name: git-stacked-prs
-description: Manage stacks of dependent git branches / stacked PRs with the local `stack` CLI (this repository). Use when the user wants to init or insert stack layers, restack after the target moved, advance after the bottom PR merged, resolve restack/advance conflicts, or undo a restack/advance. Covers `stack init/insert/remove/restack/advance/status/up/down` and their guards.
+description: Manage stacks of dependent git branches / stacked PRs with the local `stack` CLI (this repository). Use when the user wants to init or insert stack layers, restack after the target moved, advance after the bottom PR merged, publish (force-push) the stack's branches, resolve restack/advance conflicts, or undo a restack/advance. Covers `stack init/insert/remove/restack/advance/publish/status/up/down` and their guards.
 ---
 
 # Stacked PRs with `stack`
@@ -11,9 +11,10 @@ the one below it, down to a target branch (usually `main`). Each layer stores a
 re-apply those ranges onto the new base — so a layer's work is never mixed with
 the work of the layers below it.
 
-Everything is local: state lives in `.git/stack/`, the tool never talks to a
-remote and never pushes. Run it from inside the target repository's working
-tree (it operates on the repo containing the cwd).
+State lives in `.git/stack/`. Every command is local except `stack publish`,
+which force-pushes (with lease) the current stack's branches to a remote. Run
+it from inside the target repository's working tree (it operates on the repo
+containing the cwd).
 
 ## Command reference
 
@@ -24,6 +25,7 @@ tree (it operates on the repo containing the cwd).
 | `stack status`                                                                | Show the stack, mark the current layer, flag layers that need restacking or have broken metadata. |
 | `stack restack [--continue \| --undo]`                                        | Re-apply every layer onto the layer below, bottom-up.                                             |
 | `stack advance [--continue \| --undo] [--force]`                              | Drop the (externally merged) bottom layer, re-target the rest onto the target.                    |
+| `stack publish [--remote REMOTE] [--force]`                                  | Force-push (with lease) every branch of the current stack to a remote (default `origin`); the target is not pushed. `--force` = plain `--force`. |
 | `stack up` / `down` / `top` / `bottom`                                        | Check out a neighbouring / end layer.                                                             |
 | `stack remove NAME BRANCH` / `stack delete NAME` / `stack list`               | Metadata management (branches are not touched by `remove`/`delete`).                              |
 
@@ -34,15 +36,15 @@ tree (it operates on the repo containing the cwd).
 git checkout -b part1 main && <commit> && stack init --target main
 git checkout -b part2 part1 && <commit> && stack insert part1 part2
 git checkout -b part3 part2 && <commit> && stack insert part1 part3
-git push -f                          # tool never pushes; push affected branches yourself
+stack publish                        # force-push (with lease) every stack branch
 
 # 2. When main moves
-stack restack && git push -f
+stack restack && stack publish
 
 # 3. When the BOTTOM layer's PR merges into main (squash-merge is fine)
 git fetch origin main:main           # local main MUST be at the merged tip first
 stack advance                        # drops part1, re-targets part2/part3 onto main
-git push -f
+stack publish                        # force-push (with lease) every stack branch
 ```
 
 Key semantics:
@@ -123,9 +125,12 @@ This reaches the same final state a successful `advance` would have produced
 ## Agent rules of thumb
 
 - Always `stack status` first; act on what it reports.
-- The tool never pushes and never touches remotes — push affected branches with
-  `git push -f` only when the user wants that.
-- Never pass `--force` unless the user explicitly asked.
+- To push, use `stack publish` (force-with-lease by default) rather than a raw
+  `git push -f`; it pushes every branch of the current stack and keeps the
+  target (e.g. `main`) out of it.
+- Never add `--force` to `stack publish` (plain `--force`, clobbers the
+  remote) unless the user explicitly asked — the lease rejection is a safety
+  signal; fetch/re-stack first, or confirm with the user.
 - `advance` requires ≥1 remaining layer of meaning — advancing a 1-layer stack
   leaves an empty stack (the branch remains, only metadata drops it).
 - Branches in flight on other machines/CI are not a concern: state is

@@ -53,6 +53,17 @@ pub async fn current_ref_for_branch(dir: &Path, branch: &str) -> Result<String, 
     Ok(reference)
 }
 
+/// The names of the configured remotes, in the order `git remote` reports
+/// them (typically includes `origin`).
+pub async fn list_remotes(dir: &Path) -> Result<Vec<String>, GitRepoError> {
+    let output = git(dir, vec!["remote"]).await?;
+    Ok(output
+        .lines()
+        .map(|line| line.trim().to_string())
+        .filter(|line| !line.is_empty())
+        .collect())
+}
+
 /// Resolves an arbitrary ref (branch name, SHA, `HEAD~1`, ...) to a commit
 /// OID, so metadata can store stable SHAs instead of moving ref names.
 pub async fn resolve_ref(dir: &Path, reference: &str) -> Result<String, GitRepoError> {
@@ -203,7 +214,10 @@ async fn git(dir: &Path, args: Vec<&str>) -> Result<String, GitRepoError> {
     Ok(result)
 }
 
-async fn foreground_git(dir: &Path, args: Vec<&str>) -> Result<(), GitRepoError> {
+/// Runs a git command in the foreground, inheriting the parent's stdio so the
+/// user sees its full live output (progress, errors). Used for commands where
+/// streaming the real output beats capturing it — e.g. `git push`.
+pub async fn foreground_git(dir: &Path, args: Vec<&str>) -> Result<(), GitRepoError> {
     let mut command = Command::new("git");
     command.args(args.clone()).current_dir(dir);
 

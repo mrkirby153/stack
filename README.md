@@ -16,7 +16,9 @@ commits on top of the layer below it whenever the base moves — so you can keep
 independent pieces of work in independent branches and rebase the whole chain
 with one command.
 
-Everything is local: state lives under `.git/stack/`, no remotes involved.
+Everything is local: state lives under `.git/stack/`. The one exception is
+`stack publish`, which force-pushes (with lease) your stack's branches to a
+remote — every other command stays local and never touches a remote.
 
 ## Building
 
@@ -58,14 +60,14 @@ The classic stacked-PR loop:
 
 ```sh
 stack restack     # re-apply every layer onto the layer below (after main moved)
-git push -f       # update your branches
+stack publish     # force-push (with lease) every branch in the stack
 stack up          # or: down / top / bottom — check out a neighbouring layer
 # ... work, commit ...
-git push
+git push          # publish the branch you just worked on (or: stack publish)
 # When the BOTTOM layer's PR merges into main (squash-merge is fine):
 git fetch origin main:main   # bring local main to the merged tip (or: git pull on main)
 stack advance               # drop the bottom layer, re-target the rest onto main
-git push -f
+stack publish               # force-push (with lease) every branch in the stack
 ```
 
 ### `restack`
@@ -106,6 +108,24 @@ broken, or missing, `advance` refuses and points you at `stack status` /
 behind the target is not an issue anywhere — it is the normal post-merge
 state `advance` expects (see `stack status`) — but the bottom's integrity is
 still enforced.
+
+### `publish`
+
+Force-pushes **every branch in the current stack** to a remote (default
+`origin`) with `--force-with-lease`, so a `restack` or `advance` that rewrote
+your branches is reflected on the remote — without clobbering changes someone
+else pushed since your last fetch. Branches are pushed bottom-up; the target
+(e.g. `main`) is **not** pushed.
+
+```sh
+stack publish                    # push all layers to origin
+stack publish --remote up        # push to a different remote
+stack publish --force            # plain `--force` (bypass the lease check)
+```
+
+`--force-with-lease` refuses a push when the remote branch has moved since your
+last `git fetch` — the safe default. If that rejects a branch, fetch (and
+`stack restack` if needed) and retry, or override with `stack publish --force`.
 
 ### Conflicts
 
@@ -148,6 +168,7 @@ advance.
 | `stack top` / `stack bottom` | Check out the top / bottom layer. |
 | `stack restack [--continue \| --undo]` | Re-apply every layer onto the layer below. `--continue` resumes a conflicted restack after you resolve it; `--undo` restores the pre-restack state. |
 | `stack advance [--continue \| --undo] [--force]` | Drop the (externally merged) bottom layer and re-target the rest onto the target. Refuses if the target is behind the bottom layer's work (`--force` overrides) or if the surviving layers are not up to date (run `stack restack` first). Same `--continue`/`--undo` semantics. |
+| `stack publish [--remote REMOTE] [--force]` | Force-push (with lease) every branch in the current stack to a remote (default `origin`); the target is not pushed. `--force` uses a plain `--force` (bypasses the lease check). |
 
 Every command also supports `--help` for details.
 

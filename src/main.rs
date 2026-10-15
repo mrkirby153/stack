@@ -26,6 +26,8 @@ enum Command {
     Restack(commands::restack::RestackArgs),
     /// Advances the stack by one layer
     Advance(commands::restack::AdvanceArgs),
+    /// Force-push (with lease) every branch in the current stack to a remote
+    Publish(commands::publish::Args),
     /// Inserts a new layer into the stack at a specified position
     Insert(commands::insert::Args),
     /// Removes a layer from the stack
@@ -66,5 +68,6 @@ async fn run() -> Result<(), CliError> {
         Command::Bottom => commands::movement::bottom(&ctx).await,
         Command::Restack(args) => commands::restack::restack(&ctx, args).await,
         Command::Advance(args) => commands::restack::advance(&ctx, args).await,
+        Command::Publish(args) => commands::publish::run(&ctx, args).await,
     }
 }
