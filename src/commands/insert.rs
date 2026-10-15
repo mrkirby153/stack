@@ -113,7 +113,7 @@ pub async fn run(ctx: &Ctx, args: Args) -> Result<(), CliError> {
     target_stack.save()?;
     println!(
         "Layer '{}' inserted into stack '{}' (base {})",
-        &branch,
+        branch,
         args.name,
         &base[..7]
     );

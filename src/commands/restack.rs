@@ -500,7 +500,7 @@ async fn perform_undo(ctx: &Ctx, expected_op: &str, snapshot_file: &str) -> Resu
                 &stacks_dir.join(format!("{}.json", undo_snapshot.stack_name)),
                 &undo_snapshot.metadata.target,
             )
-        },
+        }
     };
 
     // Update the refs

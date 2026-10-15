@@ -30,8 +30,7 @@ pub enum CliError {
     TargetBranchMatchesCurrent,
     #[error("Stack already exists: {0}")]
     StackExists(String),
-    #[error(
-        "Invalid stack name '{0}': stack names may only contain letters, digits, and '-'")]
+    #[error("Invalid stack name '{0}': stack names may only contain letters, digits, and '-'")]
     InvalidStackName(String),
     #[error("Stack not found: {0}")]
     StackNotFound(String),
