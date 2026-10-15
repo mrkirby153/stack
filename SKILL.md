@@ -22,7 +22,7 @@ containing the cwd).
 | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `stack init [--target BR] [--name NAME] [--base REF]`                         | New stack with the **current branch** as its bottom layer (target defaults to `main`).            |
 | `stack insert NAME [BRANCH] [--at N \| --before L \| --after L] [--from REF]` | Add an **existing branch** as a layer (base inferred from the layer below if omitted).            |
-| `stack status`                                                                | Show the stack, mark the current layer, flag layers that need restacking or have broken metadata. |
+| `stack status [--json]`                                                        | Show the stack, mark the current layer, flag layers that need restacking or have broken metadata. `--json` = stable machine-readable form (schema below). |
 | `stack restack [--continue \| --undo]`                                        | Re-apply every layer onto the layer below, bottom-up.                                             |
 | `stack advance [--continue \| --undo] [--force]`                              | Drop the (externally merged) bottom layer, re-target the rest onto the target.                    |
 | `stack publish [--remote REMOTE] [--force]`                                  | Force-push (with lease) every branch of the current stack to a remote (default `origin`); the target is not pushed. `--force` = plain `--force`. |
@@ -77,6 +77,22 @@ Stack needs to be restacked
 - `needs restack` → run `stack restack` before pushing/advancing.
 - `! inconsistent` / `! empty` / `! branch not found` → metadata or branch
   damage; fix the branch or re-record the layer (`stack remove` + `stack insert --from <base>`) before any rebase.
+
+### `stack status --json` (machine-readable)
+
+`stack status --json` prints one line of JSON — useful for prompts/scripts
+(e.g. Starship) or for an agent to inspect state programmatically:
+
+- `stack`, `target`, `branch`, `position` (0 = bottom, `size-1` = top), `size`
+- `up_to_date`, `needs_restack`, `inconsistent` (booleans)
+- `status`: `up_to_date` | `inconsistent` | `needs_restack` | `error`
+- `layers[]`: `{ branch, current, issue }` where `issue` is `null` or
+  `behind_below` | `below_changed` | `branch_not_found` | `base_not_ancestor` |
+  `empty_layer`
+
+```sh
+stack status --json | jq -r '"\(.stack):\(.position) \(.status)"'   # "part1:1 needs_restack"
+```
 
 ## Conflicts during `restack` / `advance`
 

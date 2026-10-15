@@ -52,6 +52,8 @@ pub enum CliError {
     RestackError(#[from] crate::commands::restack::Error),
     #[error("{0}")]
     PublishError(#[from] crate::commands::publish::Error),
+    #[error("Failed to serialize status to JSON: {0}")]
+    JsonError(#[from] serde_json::Error),
 }
 
 pub struct Ctx {

@@ -11,7 +11,7 @@ struct StackCli {
 #[derive(Debug, clap::Subcommand)]
 enum Command {
     /// View the current status of a stack
-    Status,
+    Status(commands::status::Args),
 
     /// Moves one layer up in the stack
     Up,
@@ -59,7 +59,7 @@ async fn run() -> Result<(), CliError> {
         Command::Init(args) => commands::init::run(&ctx, args).await,
         Command::Delete(args) => commands::delete::run(&ctx, args).await,
         Command::List => commands::list::run(&ctx).await,
-        Command::Status => commands::status::run(&ctx).await,
+        Command::Status(args) => commands::status::run(&ctx, args).await,
         Command::Insert(args) => commands::insert::run(&ctx, args).await,
         Command::Remove(args) => commands::remove::run(&ctx, args).await,
         Command::Up => commands::movement::up(&ctx).await,

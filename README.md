@@ -70,6 +70,44 @@ stack advance               # drop the bottom layer, re-target the rest onto mai
 stack publish               # force-push (with lease) every branch in the stack
 ```
 
+### `status`
+
+Shows the stack and which layer you're on, and flags any layer that needs
+restacking or has broken metadata. Add `--json` for a stable, machine-readable
+form — handy in a prompt or script (e.g. Starship):
+
+```json
+{
+  "stack": "part1",
+  "target": "main",
+  "branch": "part2",
+  "position": 1,
+  "size": 3,
+  "up_to_date": false,
+  "needs_restack": true,
+  "inconsistent": false,
+  "status": "needs_restack",
+  "layers": [
+    { "branch": "part1", "current": false, "issue": null },
+    { "branch": "part2", "current": true,  "issue": null },
+    { "branch": "part3", "current": false, "issue": "behind_below" }
+  ]
+}
+```
+
+- `position` is 0-based (0 = bottom, `size - 1` = top).
+- `status` is one of `up_to_date`, `inconsistent`, `needs_restack`, or `error`
+  (the last covers a not-up-to-date state that is neither, e.g. an empty layer).
+- each layer's `issue` is `null` or one of `behind_below`, `below_changed`,
+  `branch_not_found`, `base_not_ancestor`, `empty_layer`.
+
+Example consumption with `jq`:
+
+```sh
+stack status --json | jq -r '"\(.stack):\(.position) \(.status)"'
+# -> "part1:1 needs_restack"
+```
+
 ### `restack`
 
 Re-applies each layer's own commits (`base..tip`) onto the new tip of the layer
@@ -163,7 +201,7 @@ advance.
 | `stack remove NAME BRANCH` | Remove a layer from the stack (metadata only — the branch itself is not deleted). |
 | `stack delete NAME` | Delete the stack's metadata entirely (branches are not touched). |
 | `stack list` | List all stacks in the repository. |
-| `stack status` | Show the current branch's stack with the current layer marked. |
+| `stack status [--json]` | Show the current branch's stack with the current layer marked. `--json` emits a stable machine-readable form (for prompts / scripts). |
 | `stack up` / `stack down` | Check out the layer above / below the current one. No-op at the top / bottom. |
 | `stack top` / `stack bottom` | Check out the top / bottom layer. |
 | `stack restack [--continue \| --undo]` | Re-apply every layer onto the layer below. `--continue` resumes a conflicted restack after you resolve it; `--undo` restores the pre-restack state. |
