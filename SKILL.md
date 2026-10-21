@@ -23,7 +23,7 @@ containing the cwd).
 | `stack init [--target BR] [--name NAME] [--base REF]`                         | New stack with the **current branch** as its bottom layer (target defaults to `main`).            |
 | `stack insert NAME [BRANCH] [--at N \| --before L \| --after L] [--from REF]` | Add an **existing branch** as a layer (base inferred from the layer below if omitted).            |
 | `stack status [--json]`                                                        | Show the stack, mark the current layer, flag layers that need restacking or have broken metadata. `--json` = stable machine-readable form (schema below). |
-| `stack restack [--continue \| --undo]`                                        | Re-apply every layer onto the layer below, bottom-up.                                             |
+| `stack restack [--onto-target \| --continue \| --undo]`                       | Re-apply every layer onto the layer below, bottom-up. The bottom layer stays on its base unless `--onto-target` is given. |
 | `stack advance [--continue \| --undo] [--force]`                              | Drop the (externally merged) bottom layer, re-target the rest onto the target.                    |
 | `stack publish [--remote REMOTE] [--force]`                                  | Force-push (with lease) every branch of the current stack to a remote (default `origin`); the target is not pushed. `--force` = plain `--force`. |
 | `stack up` / `down` / `top` / `bottom`                                        | Check out a neighbouring / end layer.                                                             |
@@ -38,8 +38,11 @@ git checkout -b part2 part1 && <commit> && stack insert part1 part2
 git checkout -b part3 part2 && <commit> && stack insert part1 part3
 stack publish                        # force-push (with lease) every stack branch
 
-# 2. When main moves
+# 2. When a lower layer changed
 stack restack && stack publish
+
+# 2b. When you want to pick up main
+stack restack --onto-target && stack publish
 
 # 3. When the BOTTOM layer's PR merges into main (squash-merge is fine)
 git fetch origin main:main           # local main MUST be at the merged tip first
@@ -52,8 +55,9 @@ Key semantics:
 - **`advance` only drops the bottom layer.** It assumes that layer's work is
   already in the target (via a PR). Its branch is left untouched — just removed
   from the stack metadata.
-- **`restack` keeps every layer.** It is how you move the whole stack after the
-  target (or a lower layer) changed.
+- **`restack` keeps every layer.** It re-applies each layer onto the layer below
+  after a lower layer changed. It does **not** move the bottom layer onto the
+  target unless you pass `--onto-target`.
 - **Local target must be fresh before `advance`.** If local `main` hasn't
   received the merge, `advance` refuses; fix with `git fetch origin main:main`
   (or pull on main), not `--force`.

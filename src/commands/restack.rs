@@ -106,6 +106,13 @@ pub struct RestackArgs {
     #[clap(long, action)]
     /// Undoes the last restack operation
     undo: bool,
+    #[clap(
+        long,
+        action,
+        conflicts_with_all = ["continue_", "undo"],
+        help = "Also move the bottom layer onto the current tip of the target"
+    )]
+    onto_target: bool,
 }
 
 pub async fn restack(ctx: &Ctx, args: RestackArgs) -> Result<(), CliError> {
@@ -124,7 +131,16 @@ pub async fn restack(ctx: &Ctx, args: RestackArgs) -> Result<(), CliError> {
     }
 
     let current_stack = ctx.current_stack().await?.ok_or(NoStack)?;
-    start_operation(ctx, "restack", &current_stack, None).await
+    let bottom_base = if args.onto_target {
+        current_ref_for_branch(&ctx.cwd, &current_stack.target).await?
+    } else {
+        current_stack
+            .layers
+            .first()
+            .map(|l| l.base_oid.clone())
+            .expect("stack always has at least one layer")
+    };
+    start_operation(ctx, "restack", &current_stack, None, bottom_base).await
 }
 
 #[derive(Debug, clap::Args)]
@@ -205,7 +221,14 @@ pub async fn advance(ctx: &Ctx, args: AdvanceArgs) -> Result<(), CliError> {
         .into());
     }
 
-    start_operation(ctx, "advance", &current_stack, Some(bottom_branch)).await
+    start_operation(
+        ctx,
+        "advance",
+        &current_stack,
+        Some(bottom_branch),
+        target_oid,
+    )
+    .await
 }
 
 /// Starts a new operation (the caller has verified none is in flight):
@@ -217,6 +240,7 @@ async fn start_operation(
     op: &str,
     stack: &Stack,
     dropped: Option<String>,
+    bottom_base: String,
 ) -> Result<(), CliError> {
     let original_branch = ctx.current_branch().await?;
     let undo_snapshot = UndoSnapshot::new(&ctx.cwd, stack, &original_branch).await?;
@@ -262,8 +286,9 @@ async fn start_operation(
 
     let state = OpState {
         op: op.to_string(),
-        target_oid: target_oid.clone(),
-        new_base_for_next: target_oid,
+        target_oid,
+        new_base_for_next: bottom_base.clone(),
+        bottom_base: Some(bottom_base),
         pending,
         dropped,
         undo: undo_snapshot,
@@ -429,7 +454,10 @@ async fn finalize(ctx: &Ctx, state: &OpState) -> Result<(), CliError> {
 
     // Every layer now sits on the new tip of the layer below it (the
     // target for the bottom layer) — record that in the metadata.
-    let mut new_base = state.target_oid.clone();
+    let mut new_base = state
+        .bottom_base
+        .clone()
+        .unwrap_or_else(|| state.target_oid.clone());
     for layer in &mut stack.layers {
         layer.base_oid = new_base;
         new_base = current_ref_for_branch(&ctx.cwd, &layer.branch).await?;
@@ -610,6 +638,8 @@ struct OpState {
     target_oid: String,
     /// The base the next pending layer must be re-applied onto.
     new_base_for_next: String,
+    #[serde(default)]
+    bottom_base: Option<String>,
     /// Layers left to process, in bottom-up order. After a conflict, the
     /// failed layer is at the front.
     pending: Vec<PendingLayer>,
